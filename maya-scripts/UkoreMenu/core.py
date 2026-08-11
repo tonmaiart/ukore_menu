@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from typing import Callable, Optional
 import maya.cmds as cmds
 
-MENU_MAIN = "UkoreStudioToolMenu"
-MENU_LABEL = "Ukore Studio Tool"
+MENU_MAIN = "UkoreToolsMenu"
+MENU_LABEL = "Ukore Tools"
 MENU_PARENT = "MayaWindow"
 
 

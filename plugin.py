@@ -29,3 +29,12 @@ def register(api) -> None:
     labels = bridge.get("labels", {})
     labels[TOOL_ID] = TOOL_LABEL
     bridge.set("labels", labels)
+
+    # 🟢 สั่ง Import เครื่องมือลูกเพื่อกระตุ้น __init__.py แล้วค่อยวาดเมนู
+    hooks = bridge.get("launch_hooks", {})
+    hooks[TOOL_ID] = {
+        "order": 99,
+        "post_open_mel": 'python("try:\\n    import UkoreBrowser\\nexcept ImportError:\\n    pass\\nimport UkoreMenu.core; UkoreMenu.core.registry.rebuild_menu()");',
+        "diagnostic_msg": "UkoreMenu initialized via launch hook"
+    }
+    bridge.set("launch_hooks", hooks)
