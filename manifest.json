@@ -1,0 +1,9 @@
+{
+  "id": "ukore_menu",
+  "name": "ukore_menu",
+  "version": "1.0.0",
+  "api_version": 1,
+  "entry_point": "plugin.py",
+  "description": "Central Menu Provider for Ukore Studio Tools in Maya. Allows independent tools and scripts to register their own menu items into a unified menu hierarchy.",
+  "requires": ["maya_toolkit"]
+}
