@@ -28,6 +28,42 @@ registry.register_item(
 
 ---
 
+## ⚠️ ข้อกำหนดบังคับ: ต้อง auto-import ตอน Maya เปิดไฟล์ (ไม่ใช่แค่ตอนเปิดเครื่องมือ)
+
+`registry.register_item()` จะรัน **ก็ต่อเมื่อโมดูล `maya-scripts/<ToolPackage>/__init__.py`
+ของปลั๊กอินนั้นถูก import จริง** — แค่มีโค้ด `register_item()` อยู่ใน `__init__.py`
+**ไม่พอ** ถ้าไม่มีอะไรสั่ง import แพ็กเกจนั้นตั้งแต่ Maya เปิดไฟล์ เมนูจะไม่โผล่
+จนกว่าจะมีอะไรสักอย่าง import แพ็กเกจนั้นก่อน (เช่น ผู้ใช้กดเปิดเครื่องมือนั้นจากปุ่มอื่นเอง
+ครั้งแรกก่อน — ค่อยเห็นเมนูหลังจากนั้น) ซึ่งเป็นบั๊กที่เคยเกิดขึ้นจริงกับ
+`MayaFileBrowser` (เทียบกับ `UkoreReferenceEditor` ที่ทำถูกตั้งแต่แรก)
+
+**ทุกปลั๊กอินที่ต้องการให้เมนูของตัวเองโผล่ใน "Ukore Tools" ตั้งแต่ Maya เปิดไฟล์แรก
+(ไม่ใช่หลังผู้ใช้กดเปิดเครื่องมือเองก่อน 1 ครั้ง) ต้องประกาศ `launch_hooks` เข้าไปใน
+`maya_launcher_env_bridge` config store จากฝั่ง UkoreHub เอง (`plugin.py`'s
+`register(api)`) ควบคู่กับการ contribute `PYTHONPATH`:**
+
+```python
+hooks = bridge.get("launch_hooks", {})
+hooks[TOOL_ID] = {
+    "order": 10,  # ต้องน้อยกว่า UkoreMenu เอง (order 99) เพื่อให้ import
+                  # (และ register_item) รันเสร็จก่อน UkoreMenu สั่ง rebuild_menu
+    "post_open_mel": 'python("try:\\n    import <ToolPackage>\\nexcept ImportError:\\n    pass");',
+}
+bridge.set("launch_hooks", hooks)
+```
+
+- `<ToolPackage>` คือชื่อแพ็กเกจใต้ `maya-scripts/` ของปลั๊กอินนั้น (เช่น
+  `UkoreBrowser`, `UkoreReferenceEditor`) — ต้องตรงกับชื่อโฟลเดอร์ที่มี
+  `__init__.py` ที่เรียก `registry.register_item()` อยู่จริง
+- `order` ต้อง **น้อยกว่า 99** เสมอ (ค่าที่ UkoreMenu ใช้เอง) ไม่งั้น
+  `rebuild_menu()` ของ UkoreMenu จะรันไปก่อนที่ปลั๊กอินจะทันได้ register
+  ตัวเองเข้า registry
+- อ้างอิงตัวอย่างจริงได้จาก `UkoreReferenceEditor/plugin.py`'s `register()`
+  (ปลั๊กอินอ้างอิงที่ทำถูกตั้งแต่แรก) — ห้ามใช้แค่การ contribute `PYTHONPATH`
+  เพียงอย่างเดียวแล้วคิดว่าเมนูจะโผล่เอง
+
+---
+
 ## 📦 Data Classes
 
 ### `MenuItemSpec`
