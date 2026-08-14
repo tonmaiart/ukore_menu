@@ -10,6 +10,17 @@ MENU_MAIN = "UkoreToolsMenu"
 MENU_LABEL = "Ukore Tools"
 MENU_PARENT = "MayaWindow"
 
+# Icons carried over from the old per-plugin "Ukore Studio Tool" menu
+# (retired maya-plug-ins/ukoreMaya.py's loadMenu()), which set an `image=`
+# on each of its own subMenu buttons. Category submenus here use the same
+# icons so the menu looks the same as before, just centrally registered.
+CATEGORY_ICONS = {
+    "Common": "layerEditor.png",
+    "Model": "cube.png",
+    "Rig": "kinJoint.png",
+    "Anim": "character.svg",
+}
+
 
 @dataclass
 class MenuItemSpec:
@@ -19,7 +30,10 @@ class MenuItemSpec:
         id: Unique identifier for the menu item (e.g. 'maya_file_browser').
         label: Text displayed on the menu item.
         command: Python function, string command, or module execution string.
-        category: Section divider/category name (e.g. 'จัดการไฟล์', 'Rig', 'Model / Texture').
+        category: Top-level section name (e.g. 'General', 'Model', 'Rig',
+            'Anim'). 'General' renders flat (divider only); any other
+            category becomes its own real Maya submenu — see
+            MenuRegistry.rebuild_menu.
         icon: Optional icon filename for the menu item.
         order: Priority order within its category (lower numbers appear first).
         divider_after: Whether to place a menu divider line after this item.
@@ -27,7 +41,7 @@ class MenuItemSpec:
     id: str
     label: str
     command: str | Callable
-    category: str = "Common"
+    category: str = "General"
     icon: Optional[str] = None
     order: int = 100
     divider_after: bool = False
@@ -43,14 +57,16 @@ class MenuRegistry:
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._items = {}
-            # Default category display order
+            # Default category display order. "General" is rendered flat
+            # (no submenu — see rebuild_menu) so common/frequently-used
+            # items stay one click away; every other category becomes its
+            # own real Maya submenu.
             cls._instance._categories_order = [
-                "จัดการไฟล์",
-                "Selection",
+                "General",
                 "Common",
-                "Model / Texture",
+                "Model",
                 "Rig",
-                "Animation",
+                "Anim",
             ]
         return cls._instance
 
@@ -91,13 +107,29 @@ class MenuRegistry:
                 active_cats.append(c)
 
         for cat_name in active_cats:
-            cmds.menuItem(divider=True, dividerLabel=cat_name, parent=MENU_MAIN)
+            # "General" stays flat (divider only, same as every category used
+            # to render) — everything else becomes its own real submenu so
+            # the main menu doesn't get flattened/cluttered as more tools
+            # register into it.
+            if cat_name == "General":
+                cmds.menuItem(divider=True, dividerLabel=cat_name, parent=MENU_MAIN)
+                cat_parent = MENU_MAIN
+            else:
+                submenu_kwargs = {
+                    "subMenu": True,
+                    "label": cat_name,
+                    "parent": MENU_MAIN,
+                    "tearOff": True,
+                }
+                if cat_name in CATEGORY_ICONS:
+                    submenu_kwargs["image"] = CATEGORY_ICONS[cat_name]
+                cat_parent = cmds.menuItem(**submenu_kwargs)
 
             # Dictionary เก็บ reference ของ Submenu ที่สร้างขึ้นภายใน Category นี้
             created_submenus: dict[str, str] = {}
 
             for spec in items_by_cat[cat_name]:
-                target_parent = MENU_MAIN
+                target_parent = cat_parent
 
                 # ถ้ามีการระบุ sub_menu ให้สร้างหรือดึง Submenu นั้นมาเป็น Parent
                 if spec.sub_menu:
@@ -106,7 +138,7 @@ class MenuRegistry:
                         sub_item = cmds.menuItem(
                             subMenu=True,
                             label=spec.sub_menu,
-                            parent=MENU_MAIN,
+                            parent=cat_parent,
                             tearOff=True,
                         )
                         created_submenus[sub_key] = sub_item

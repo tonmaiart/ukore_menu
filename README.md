@@ -18,7 +18,7 @@ registry.register_item(
     MenuItemSpec(
         id="my_custom_tool",
         label="My Custom Tool...",
-        category="Common",
+        category="General",
         command="import my_tool; my_tool.run()",
         order=10,
     )
@@ -91,7 +91,7 @@ class MenuItemSpec:
 | `id` | `str` | *(Required)* | รหัสระบุตัวตนที่ไม่ซ้ำกันของรายการเมนู (Unique ID) เช่น `'maya_file_browser'` |
 | `label` | `str` | *(Required)* | ข้อความที่จะแสดงบนปุ่มเมนูใน Maya เช่น `'Maya File Browser...'` |
 | `command` | `str | Callable` | *(Required)* | คำสั่งที่จะทำงานเมื่อกดเมนู รองรับทั้ง Python string command และ Python function/callable |
-| `category` | `str` | `"Common"` | หมวดหมู่ที่จะนำเมนูไปวางไว้ (ตัวอย่าง: `'จัดการไฟล์'`, `'Selection'`, `'Common'`, `'Model / Texture'`, `'Rig'`, `'Animation'`) |
+| `category` | `str` | `"General"` | หมวดหมู่ที่จะนำเมนูไปวางไว้ — ค่ามาตรฐาน 4 ค่า: `'General'`, `'Model'`, `'Rig'`, `'Anim'` (ดูหัวข้อ "Category Rendering" ด้านล่าง) |
 | `icon` | `Optional[str]` | `None` | Path หรือชื่อไฟล์ไอคอนที่จะแสดงหน้าข้อความเมนู |
 | `order` | `int` | `100` | ลำดับการจัดเรียงภายในหมวดหมู่เดียวกัน (ตัวเลขน้อยจะอยู่ด้านบน) |
 | `divider_after` | `bool` | `False` | หากเป็น `True` จะใส่เส้นคั่น (Divider) ต่อท้ายเมนูนี้ |
@@ -146,19 +146,53 @@ class MenuItemSpec:
 * **Logic การจัดวาง:**
 1. จัดกลุ่มรายการเมนูตาม `category`
 2. เรียงหมวดหมู่ตามลำดับมาตรฐาน:
-* `จัดการไฟล์`
-* `Selection`
+* `General`
 * `Common`
-* `Model / Texture`
+* `Model`
 * `Rig`
-* `Animation`
+* `Anim`
 *(หากมี Category นอกเหนือจากนี้ จะถูกนำไปต่อท้าย)*
-
-
 3. เรียงลำดับเมนูภายใน Category เดียวกันตามค่า `order`
 4. สร้าง Submenu (ถ้ามีการระบุ `sub_menu`) และวาดปุ่มกดตาม `command` ที่กำหนดไว้
 
+---
 
+## 📐 Category Rendering (2026-08-14)
+
+Category ไม่ได้ถูก flatten เป็น divider ทั้งหมดเหมือนเดิมอีกต่อไป — เพื่อไม่ให้เมนู
+"Ukore Tools" รกเกินไปเมื่อมีปลั๊กอินมาลงทะเบียนเพิ่มขึ้นเรื่อยๆ:
+
+* **`"General"`** — หมวดเดียวที่ยังคง flatten (แค่ divider คั่น เหมือนพฤติกรรมเดิม
+  ของทุก category) — ใช้กับเครื่องมือที่ใช้งานบ่อย/เข้าถึงเร็ว เช่น
+  Maya File Browser, Save Increment, Ukore Reference Editor
+* **`"Common"` / `"Model"` / `"Rig"` / `"Anim"`** — กลายเป็น Submenu จริงของตัวเอง
+  (ไม่ใช่แค่ divider) เพื่อรวบรวมเครื่องมือเฉพาะทางจำนวนมากไว้โดยไม่กินพื้นที่หน้า
+  เมนูหลัก — `"Common"` เก็บเครื่องมือ selection/general-purpose (Renamer,
+  Attribute, Flip Selection, Sort by Type, ฯลฯ — เดิมกระจายอยู่ใน `Selection`
+  กับ `Common` แยกกัน)
+* Category ใดๆ ที่ไม่ใช่ `"General"` (รวมถึงชื่อ category อื่นที่ไม่รู้จัก) จะถูก
+  วาดเป็น Submenu เสมอ — ดู `MenuRegistry.rebuild_menu()`'s ใน `core.py`
+* `sub_menu` field ของ `MenuItemSpec` ยังทำงานเหมือนเดิม โดยจะซ้อนอยู่ภายใต้
+  category submenu นั้นๆ อีกชั้นหนึ่ง (หรือใต้ `MENU_MAIN` โดยตรงถ้า category
+  เป็น `"General"`)
+* **Icon ของ submenu**: `core.py`'s `CATEGORY_ICONS` map ชื่อ category ไปยัง
+  ไอคอนของมันเอง (คนละเรื่องกับ `MenuItemSpec.icon` ที่เป็นไอคอนของแต่ละเมนูไอเทม)
+  — สืบทอดมาจากไอคอนเดิมที่ `maya-plug-ins/ukoreMaya.py`'s `loadMenu()`
+  เคยตั้งให้แต่ละ subMenu ก่อนจะถูก retire: `Common` → `layerEditor.png`,
+  `Model` → `cube.png`, `Rig` → `kinJoint.png`, `Anim` → `character.svg`.
+  Category ที่ไม่มีอยู่ใน map นี้ (รวมถึง `"General"` ซึ่งไม่ใช่ submenu) จะไม่มี
+  ไอคอน — เพิ่ม entry ใหม่ใน `CATEGORY_ICONS` เองถ้าต้องการไอคอนให้ category อื่น
+
+**ปลั๊กอินเก่าที่ยังใช้ category แบบเดิม** (`'จัดการไฟล์'`, `'Selection'`,
+`'Model / Texture'`, `'Animation'`) ต้องอัปเดตเป็นชุดค่ามาตรฐานใหม่ — มิฉะนั้นเมนู
+ของปลั๊กอินนั้นจะกลายเป็น Submenu แยกต่างหากที่ใช้ชื่อเดิม (ยังทำงานได้ ไม่ error
+แต่ไม่ตรงกับโครงสร้างที่ตั้งใจไว้ และจะไม่มีไอคอนเพราะไม่อยู่ใน `CATEGORY_ICONS`).
+ตัวอย่างการ mapping ที่ใช้จริงใน `MayaToolkit`, `UkoreReferenceEditor`,
+`MayaFileBrowser`, `dw_publish_picker`: `จัดการไฟล์` → `General`,
+`Selection`/`Common` (เดิม) → `Common` (ใหม่), `Model / Texture` → `Model`,
+`Rig` → `Rig` (ไม่เปลี่ยน), `Animation` → `Anim` (ยกเว้นรายการที่เป็นเครื่องมือที่
+ใช้บ่อย/มีรายการเดียว เช่น `dw_publish_picker` ซึ่งย้ายไป `General` แทนที่จะเป็น
+`Anim`).
 
 ---
 
@@ -187,7 +221,7 @@ registry.register_item(
     MenuItemSpec(
         id="file_export_tool",
         label="Export Asset...",
-        category="จัดการไฟล์",
+        category="General",
         command="import asset_exporter; asset_exporter.export_dialog()",
         order=1,
         divider_after=True
@@ -225,8 +259,8 @@ registry.register_item(
     MenuItemSpec(
         id="clean_unused_nodes",
         label="Clean Unused Nodes",
-        category="Model / Texture",
-        sub_menu="Utilities",  # วางไว้ใน Submenu ชื่อ "Utilities"
+        category="Model",
+        sub_menu="Utilities",  # วางไว้ใน Submenu ย่อยชื่อ "Utilities" ภายใต้ Submenu "Model" อีกที
         command="import model_utils; model_utils.clean_nodes()",
         order=10
     )
