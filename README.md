@@ -196,17 +196,116 @@ Category ไม่ได้ถูก flatten เป็น divider ทั้ง�
 
 ---
 
-## 🌐 Public Module Exports
+## 🔁 Reload Plugin System (2026-08-19)
 
-โมดูล `UkoreMenu` ส่งออก (Export) ตัวแปรสำคัญสองตัวให้ใช้งานหลัก ได้แก่:
+นอกจาก Menu Item Registry แล้ว `UkoreMenu` ยังสร้างปุ่ม **"Reload Plugin"**
+ไว้ล่างสุดของเมนู "Ukore Tools" ให้เองโดยอัตโนมัติ (นอก Category ใดๆ ทั้งสิ้น
+— แสดงเสมอไม่ว่าจะมีปลั๊กอินมา register reload handler ไว้กี่ตัวก็ตาม) เมื่อกด
+ปุ่มนี้ ระบบจะไล่รัน `callback` ของทุก Reload Handler ที่ปลั๊กอินต่างๆ
+ลงทะเบียนไว้ตามลำดับ `order` จากน้อยไปมาก, `rebuild_menu()` อีกครั้งเพื่อความ
+ชัวร์, แล้วสรุปผลเป็น `inViewMessage` ว่าปลั๊กอินไหน reload สำเร็จ/ล้มเหลวบ้าง
+— **1 handler พังไม่ทำให้ handler อื่นหยุดทำงานตาม** (แต่ละตัวถูกครอบด้วย
+try/except แยกกัน, error รายละเอียดขึ้น `cmds.warning` ให้ดูใน Script Editor)
+
+### `ReloadHandlerSpec`
 
 ```python
-from UkoreMenu import registry, MenuItemSpec
+@dataclass
+class ReloadHandlerSpec:
+    id: str
+    label: str
+    callback: Callable[[], None]
+    order: int = 100
 
 ```
 
-* `registry` (`MenuRegistry`): Instance หลักสำหรับใช้งานระบบ Registry
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `id` | `str` | *(Required)* | รหัสระบุตัวตนที่ไม่ซ้ำกันของ handler เช่น `'ukore_browser'` |
+| `label` | `str` | *(Required)* | ชื่อที่จะโชว์ในสรุปผล `inViewMessage` หลังกด Reload |
+| `callback` | `Callable[[], None]` | *(Required)* | ฟังก์ชันไม่รับ argument ที่จะถูกเรียกตอนกด Reload — โค้ดปลั๊กอินต้อง reload โมดูลของตัวเอง (และ re-register อะไรก็ตามที่ reference ค้างอยู่ เช่น `MenuItemSpec.command` ที่เป็น callable ไม่ใช่ string) |
+| `order` | `int` | `100` | ลำดับการรันข้าม handler ต่างๆ (เลขน้อยรันก่อน) |
+
+### `registry.register_reload_handler(spec: ReloadHandlerSpec) -> None`
+
+ลงทะเบียน (หรืออัปเดต) reload handler ของปลั๊กอินหนึ่งๆ — เรียกจุดเดียวกับที่
+เรียก `registry.register_item()` อยู่แล้ว (ต้อง auto-import ตอน Maya เปิดไฟล์
+เหมือนกันทุกประการ — ดูหัวข้อ "ข้อกำหนดบังคับ" ด้านบน ไม่มีข้อกำหนดเพิ่มเติม
+เพราะใช้ launch_hooks ตัวเดียวกัน)
+
+### `registry.unregister_reload_handler(handler_id: str) -> None`
+
+ลบ reload handler ออกจาก Registry ด้วย `id`
+
+### `reload_package(package_name: str) -> None`
+
+Helper กลางสำหรับปลั๊กอินส่วนใหญ่ที่ไม่ได้มี reload logic พิเศษของตัวเองอยู่
+แล้ว (เทียบกับ `MayaToolkit`'s `UkoreMaya/core/Plugin.py`'s
+`reload_plugins()` ที่ reload แบบเจาะจงลำดับโมดูลเอง เพราะมี dependency
+ข้าม module ที่ต้อง reload ตามลำดับที่กำหนด) — reload ทุก submodule ที่เคย
+ถูก import แล้วของ `package_name` (จาก `sys.modules`, เรียงจากลึกสุดไปตื้นสุด
+แล้วค่อย reload package หลักเป็นตัวสุดท้าย) โมดูลไหน reload พังจะแค่ขึ้น
+`cmds.warning` แล้วข้ามไป ไม่ทำให้ตัวอื่น/handler อื่นพังตาม
+
+**สำคัญ:** ถ้าปลั๊กอินนั้น register เมนู/reload handler ไว้ใน module-level
+code ของ package หลักเอง (แบบเดียวกับที่ `register_item()` ต้องทำตาม
+ข้อกำหนดบังคับด้านบนอยู่แล้ว) `reload_package()` จะ re-register ให้ฟรี
+เพราะการ reload `__init__.py` คือการรันโค้ดนั้นซ้ำ — แต่ถ้าปลั๊กอินไหน
+register ผ่านฟังก์ชันแยกที่ถูกเรียกจาก MEL launch hook แทน (เช่น
+`dw_publish_picker`'s `DwPublishPicker.register_menu()` ที่ถูกเรียกจาก
+`post_open_mel`, ไม่ใช่ตอน import) ต้องเรียกฟังก์ชัน register นั้นซ้ำเองใน
+`callback` หลัง `reload_package()` คืนค่ากลับมาด้วย — ดูตัวอย่างจริงได้จาก
+`dw_publish_picker/maya-scripts/DwPublishPicker/picker_loader.py`'s
+`_reload_dw_publish_picker()`
+
+### ตัวอย่างการใช้งาน (ปลั๊กอินทั่วไปที่ไม่มี reload logic พิเศษ)
+
+```python
+from UkoreMenu import registry, MenuItemSpec, ReloadHandlerSpec, reload_package
+
+registry.register_item(MenuItemSpec(id="my_tool", label="My Tool...", command="...", order=10))
+
+registry.register_reload_handler(
+    ReloadHandlerSpec(
+        id="my_tool",
+        label="My Tool",
+        callback=lambda: reload_package("MyToolPackage"),
+        order=50,
+    )
+)
+
+```
+
+### ตัวอย่างการใช้งาน (ปลั๊กอินที่มี reload logic ของตัวเองอยู่แล้ว)
+
+```python
+from UkoreMenu import registry, ReloadHandlerSpec
+from UkoreMaya.core.Plugin import reload_plugins
+
+registry.register_reload_handler(
+    ReloadHandlerSpec(id="maya_toolkit", label="MayaToolkit", callback=reload_plugins, order=10)
+)
+
+```
+
+---
+
+## 🌐 Public Module Exports
+
+โมดูล `UkoreMenu` ส่งออก (Export) ตัวแปรสำคัญให้ใช้งานหลัก ได้แก่:
+
+```python
+from UkoreMenu import registry, MenuItemSpec, ReloadHandlerSpec, reload_package
+
+```
+
+* `registry` (`MenuRegistry`): Instance หลักสำหรับใช้งานระบบ Registry (ทั้ง
+  menu item และ reload handler)
 * `MenuItemSpec` (`MenuItemSpec`): Data class สำหรับสร้างวัตถุข้อมูลเมนู
+* `ReloadHandlerSpec` (`ReloadHandlerSpec`): Data class สำหรับสร้างวัตถุ
+  reload handler — ดูหัวข้อ "Reload Plugin System" ด้านบน
+* `reload_package` (`Callable[[str], None]`): Helper กลางสำหรับ reload
+  ทุก submodule ของ package หนึ่งๆ ที่เคยถูก import แล้ว
 
 ---
 
